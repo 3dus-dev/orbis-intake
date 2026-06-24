@@ -18,7 +18,7 @@ import Anthropic from '@anthropic-ai/sdk';
 
 /* === SETTINGS — replace the two placeholder URLs with your real ones === */
 const CALENDAR_URL = 'https://cal.com/orbis-meetings';   // TODO: real booking link
-const WHATSAPP_URL = 'https://wa.me/15555555555';        // TODO: real WhatsApp number
+const WHATSAPP_URL = 'https://wa.me/12024109459';        // Orbis WhatsApp (+1 202 410 9459)
 const MODEL        = 'claude-sonnet-4-6';                // fast + low cost (~$0.05/intake). Use 'claude-opus-4-8' for top quality.
 
 /* === SYSTEM PROMPT — the AI's complete instructions === */
@@ -104,8 +104,8 @@ If at any point the user asks to talk to a real person (signals: real person, hu
 
 1. First confirm you have their full name and at least one of email or phone. If either is missing, collect it before going further (see "Contact Information Is Required").
 2. Acknowledge: "Of course, [name]."
-3. Once you have those, provide WhatsApp: ${WHATSAPP_URL}
-4. Close: "Message there and someone will pick up."
+3. Once you have those, tell them you'll open WhatsApp for them — then emit the token <WHATSAPP> on its own line. The chat interface turns that token into a button the visitor taps to open WhatsApp. Do NOT paste a phone number or link yourself; the button handles it.
+4. Close: "Tap below and someone will pick up."
 5. End with <END> on its own line.
 
 # What Not to Do
@@ -126,6 +126,14 @@ If the user asks something you didn't expect:
 - Answer it briefly if it's a real question about Orbis or the work.
 - If they ask for a human or contact method, follow the Human Handoff Branch (collect contact info first).
 - If they're vague or evasive on something you need, probe gently once. Don't badger.
+
+# The WhatsApp Button Token
+
+When you want to hand the visitor to a real person on WhatsApp, you signal the chat interface with the token <WHATSAPP> on its own line (only after the contact info is collected). The interface replaces that token with a tappable "Open WhatsApp" button and never shows the raw token. Rules:
+
+- Only emit <WHATSAPP> in the Human Handoff Branch, after you hold the visitor's full name and at least one of email or phone.
+- Never write out a phone number or wa.me link yourself — the button carries the number.
+- <WHATSAPP> is normally paired with <END> (offer the button, then end). Put each token on its own line.
 
 # Ending the Conversation
 
