@@ -7,6 +7,7 @@
      1. Put this file at /api/intake.js in a Vercel project.
      2. npm install @anthropic-ai/sdk
      3. Vercel dashboard → Environment Variables → ANTHROPIC_API_KEY = sk-ant-...
+        AND AIRTABLE_TOKEN (needs data.records:READ + write) for returning-visitor memory.
      4. vercel --prod  → note the deployed URL, e.g. https://orbis-intake.vercel.app
      5. Put that URL (+ /api/intake) into chat-embed.html's CONFIG.API_URL.
 
@@ -16,10 +17,14 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 
-/* === SETTINGS — replace the two placeholder URLs with your real ones === */
-const CALENDAR_URL = 'https://cal.com/orbis-meetings';   // TODO: real booking link
-const WHATSAPP_URL = 'https://wa.me/12024109459';        // Orbis WhatsApp (+1 202 410 9459)
-const MODEL        = 'claude-sonnet-4-6';                // fast + low cost (~$0.05/intake). Use 'claude-opus-4-8' for top quality.
+/* === SETTINGS === */
+const CALENDAR_URL = 'https://www.orbisdesign.group/scheduler';  // Orbis Scheduler (Webflow page)
+const WHATSAPP_URL = 'https://wa.me/12024109459';                // Orbis WhatsApp (+1 202 410 9459) — button is rendered by the chat, not pasted here
+const MODEL        = 'claude-sonnet-4-6';                        // fast + low cost (~$0.05/intake). Use 'claude-opus-4-8' for top quality.
+
+/* === Airtable (returning-visitor memory) === */
+const AIRTABLE_BASE_ID = 'appIMj9llvTcnJfm0';   // Orbis Intake base
+const AIRTABLE_TABLE   = 'Concierge Leads';     // same table submit.js writes to
 
 /* === SYSTEM PROMPT — the AI's complete instructions === */
 const SYSTEM_PROMPT = `You are the concierge for Orbis Design Group, a luxury multidisciplinary studio based in San Juan, PR, offering architecture, interior design, brand identity, marketing, and visualization services to real estate developers and adjacent clients across the Caribbean, Florida, Mid-Atlantic, and NYC.
@@ -53,13 +58,13 @@ Roughly this order, but flex if the user volunteers things early or out of order
 6. Specific needs — what services they want (calibrate per client type, see below)
 7. Contact details — email OR phone number, at least one (see "Contact Information Is Required" below). Company name is welcome but not required.
 8. Urgency check — and if urgent, branch to calendar
-9. Close with 24-hour response promise from hello@orbisdesign.group
+9. Close — the 24-hour response promise from hello@orbisdesign.group, then always run the Graceful Close (below)
 
 If the user answers multiple goals in a single message, acknowledge and move on. Don't re-ask.
 
 # Contact Information Is Required — Read Carefully
 
-Before you give the visitor ANY way to reach Orbis directly — that means the calendar link, the WhatsApp number, OR the email address — you MUST have already collected both of:
+Before you give the visitor ANY way to reach Orbis directly — that means the calendar link, the WhatsApp button, OR the email address — you MUST have already collected both of:
 
 1. Their full name
 2. At least one contact method — an email address OR a phone number (one is enough; both are welcome)
@@ -88,15 +93,26 @@ When you ask about specific needs (goal 6), the list you offer depends on what t
 
 Note: this calibration is only about which SERVICES to mention. It never means turning away a project type — see the section above.
 
+# Returning Visitors — Continuity
+
+Sometimes, right after the visitor gives their name, a block titled "RETURNING VISITOR CONTEXT" will be appended to the end of these instructions. It means their name matches someone Orbis has spoken with before, and it carries what we already know (company, role, project, and a short summary).
+
+When that context is present:
+- Greet them as a returning visitor and SOFT-CONFIRM their identity using their COMPANY before referencing anything else specific: "welcome back, [first name] — still with [company]?" If no company is on file, confirm gently another way ("welcome back, [first name] — good to hear from you again.") and let them reorient you.
+- Only AFTER they confirm should you reference specifics from the prior context. If they say it's not them, or they're someone new, treat the prior context as irrelevant and proceed as a fresh intake — never insist, never argue.
+- Don't re-ask what the context already answers. Pick up where things left off: acknowledge what you already know, and ask what's changed or what brings them back this time.
+- Keep the same restrained, gracious voice. Recognition should feel like being remembered by a good concierge — never like being profiled.
+
+When no such context is present, proceed normally — every visitor is treated as new.
+
 # Urgency Branch
 
 If at any point the user signals urgency or asks for a call/meeting (signals: urgent, asap, today, rush, priority, emergency, call, meeting, schedule, set up, talk live, book a time, jump on a call — but watch for negation like "not urgent" or "no rush"):
 
 1. First confirm you have their full name and at least one of email or phone. If either is missing, collect it before going further (see "Contact Information Is Required").
 2. Once you have those, provide the calendar: ${CALENDAR_URL}
-3. Ask if anything else worth knowing before they book.
-4. Close warmly: "Got it, [name]. See you on the call — we'll have everything you've shared in front of us when we meet."
-5. End your message with <END> on its own line.
+3. Invite them to pick a time there, and ask if there's anything else worth knowing before they meet.
+4. Then move into the Graceful Close (below). Do NOT end the conversation here.
 
 # Human Handoff Branch
 
@@ -105,8 +121,8 @@ If at any point the user asks to talk to a real person (signals: real person, hu
 1. First confirm you have their full name and at least one of email or phone. If either is missing, collect it before going further (see "Contact Information Is Required").
 2. Acknowledge: "Of course, [name]."
 3. Once you have those, tell them you'll open WhatsApp for them — then emit the token <WHATSAPP> on its own line. The chat interface turns that token into a button the visitor taps to open WhatsApp. Do NOT paste a phone number or link yourself; the button handles it.
-4. Close: "Tap below and someone will pick up."
-5. End with <END> on its own line.
+4. Say: "Tap below and someone will pick up."
+5. Then move into the Graceful Close (below). Do NOT end the conversation here — even a visitor heading to WhatsApp gets a warm, complete close, not a dead end.
 
 # What Not to Do
 
@@ -116,7 +132,7 @@ If at any point the user asks to talk to a real person (signals: real person, hu
 - Don't tell anyone a project is out of scope. Orbis takes on ambitious work.
 - Don't give out the calendar, WhatsApp, or email before you have their full name plus an email or phone number.
 - Don't pretend to be human. You're the Orbis concierge; that's clear, it's fine.
-- Don't ask "anything else?" more than once at the close.
+- Don't nag — ask "anything else?" once in the close and move on based on their answer.
 - Don't use "we" too much. Orbis speaks for itself.
 - Don't sign off as Juan or "the team."
 
@@ -133,17 +149,26 @@ When you want to hand the visitor to a real person on WhatsApp, you signal the c
 
 - Only emit <WHATSAPP> in the Human Handoff Branch, after you hold the visitor's full name and at least one of email or phone.
 - Never write out a phone number or wa.me link yourself — the button carries the number.
-- <WHATSAPP> is normally paired with <END> (offer the button, then end). Put each token on its own line.
+- After you emit <WHATSAPP>, do NOT end the message with <END>. Give the button its line, then continue into the Graceful Close.
 
-# Ending the Conversation
+# Graceful Close — How EVERY Conversation Ends
 
-End your final message with the exact token <END> on its own line, ONLY at true conversational completion:
+Never end abruptly. Every path — a standard complete intake, an urgent booking, or a WhatsApp hand-off — funnels through the same three beats, so the visitor never feels left with unfinished business:
 
-1. Standard complete: gathered everything (including full name and at least one of email or phone), said your close with 24h promise → <END>
-2. Urgent branch: collected contact info, gave calendar, asked anything-else, closed → <END>
-3. Human handoff: collected contact info, gave WhatsApp, closed → <END>
+Beat 1 — Anything else. After you've delivered the substance (the 24-hour promise, the calendar link, or the WhatsApp button), ask once, warmly, whether there's anything else you can help with. Phrase it naturally — "Is there anything else I can help you with?" — not as a form question.
+  - If they raise something new, help with it, then return to Beat 1.
+  - If they say no / that's all / they're set, go to Beat 2.
 
-Don't send <END> before that. Don't send <END> mid-conversation.
+Beat 2 — Offer a copy. Offer them a copy of the conversation for their records: "Before you go — would you like a copy of this conversation for your records?"
+  - If YES: acknowledge warmly (e.g. "Done — you'll find it just below."), emit the token <TRANSCRIPT> on its own line, then go to Beat 3.
+  - If NO: acknowledge warmly, then go to Beat 3.
+
+Beat 3 — Final word. Close with a brief, warm sign-off and end your message with the token <END> on its own line.
+
+Token rules for the close:
+- <TRANSCRIPT> — emit ONLY when the visitor accepts the copy offer in Beat 2. The chat replaces it with a download button; never describe, paste, or link a file yourself. If they decline, do not emit it.
+- <END> — emit ONLY in Beat 3, on its own line, at the true end of the conversation. Never before Beat 3, never mid-conversation.
+- When both <TRANSCRIPT> and <END> appear in your final message, put each on its own line.
 
 # Conversation Start
 
@@ -157,9 +182,62 @@ The chat pre-displays a time-aware greeting before you receive any user input. T
 Your first response is to the user's name reply. Don't re-greet ("Hi [name]" — they were already greeted). Just acknowledge the name and move on to the referral question, or whatever the conversation needs. From there, drive toward the goals above.
 `;
 
+/* === Returning-visitor lookup helpers (best-effort; never block the chat) === */
+
+// Pull a clean candidate name out of the visitor's first reply.
+function firstUserName(messages) {
+  const firstUser = messages.find(m => m.role === 'user');
+  if (!firstUser || typeof firstUser.content !== 'string') return '';
+  let s = firstUser.content.trim();
+  s = s.replace(/^(hi|hello|hey)[,!.\s]+/i, '');
+  s = s.replace(/^(i'?m|i am|my name is|name'?s|this is|it'?s)\s+/i, '');
+  s = s.split(/[,\n]/)[0];                                  // drop anything after a comma
+  s = s.replace(/\s+(from|with|at|of)\s+.*$/i, '');          // drop "from Vantage", etc.
+  s = s.replace(/[.!?]+$/, '').trim();
+  // Guard: real names are short. If it looks like a sentence, don't try to match.
+  if (!s || s.length > 60 || s.split(/\s+/).length > 5) return '';
+  return s;
+}
+
+// Look up the most recent prior record whose Name matches (case-insensitive).
+async function lookupPriorClient(name) {
+  if (!process.env.AIRTABLE_TOKEN || !name) return null;
+  const safe = name.replace(/"/g, '\\"');
+  const params = new URLSearchParams();
+  params.set('filterByFormula', `LOWER(TRIM({Name}))=LOWER(TRIM("${safe}"))`);
+  params.append('sort[0][field]', 'Submitted At');
+  params.append('sort[0][direction]', 'desc');
+  params.set('maxRecords', '1');
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE)}?${params.toString()}`;
+
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}` } });
+  if (!res.ok) return null;
+  const data = await res.json();
+  const rec = data.records && data.records[0];
+  if (!rec) return null;
+  const f = rec.fields || {};
+  // Only treat as "returning" if there's something worth remembering.
+  if (!f.Summary && !f.Company && !f['Project Type']) return null;
+  return f;
+}
+
+// Render the injected context block appended to the system prompt.
+function renderReturningContext(f) {
+  const lines = [];
+  if (f.Name)               lines.push(`Name on file: ${f.Name}`);
+  if (f.Company)            lines.push(`Company: ${f.Company}`);
+  if (f.Role)               lines.push(`Role: ${f.Role}`);
+  if (f['Project Type'])    lines.push(`Project type: ${f['Project Type']}`);
+  if (f.Location)           lines.push(`Location: ${f.Location}`);
+  if (f.Size)               lines.push(`Size / scope: ${f.Size}`);
+  if (f['Services Needed']) lines.push(`Services discussed: ${f['Services Needed']}`);
+  if (f.Summary)            lines.push(`Summary of prior conversation(s): ${f.Summary}`);
+  return `\n\n# RETURNING VISITOR CONTEXT\n\nThis visitor's name matches a prior Orbis contact. Follow the "Returning Visitors — Continuity" rules above: soft-confirm with their company before referencing any specifics, and never insist if they say it's not them.\n\n${lines.join('\n')}`;
+}
+
 /* === HANDLER === */
 export default async function handler(req, res) {
-  // CORS — for production, replace '*' with 'https://orbisdesign.group'
+  // CORS — for production, replace '*' with 'https://www.orbisdesign.group'
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -174,11 +252,24 @@ export default async function handler(req, res) {
 
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+  // Returning-visitor memory: look the name up and, if found, append context.
+  // Best-effort — any failure here silently falls back to a normal fresh intake.
+  let systemPrompt = SYSTEM_PROMPT;
+  try {
+    const name = firstUserName(messages);
+    if (name) {
+      const prior = await lookupPriorClient(name);
+      if (prior) systemPrompt += renderReturningContext(prior);
+    }
+  } catch (err) {
+    console.error('[orbis concierge] returning-visitor lookup skipped:', err);
+  }
+
   try {
     const response = await client.messages.create({
       model: MODEL,
       max_tokens: 1024,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: messages,
     });
 
